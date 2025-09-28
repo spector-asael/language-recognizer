@@ -1,4 +1,4 @@
-package main
+package parser
 
 import (
 	"fmt"
@@ -41,4 +41,16 @@ func printTreeRecursive(n interface{}, prefix string, isLast bool) {
 			printTreeRecursive(c, newPrefix, last)
 		}
 	}
+}
+
+func nodeLabel(n *Node) string {
+	switch n.nt {
+	case NT_GRAPH:
+		return "<graph>"
+	case NT_DRAW:
+		return "<draw>"
+	case NT_ACTION:
+		return "<action>"
+	}
+	return "<node>"
 }
