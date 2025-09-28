@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"testing"
+	"github.com/spector-asael/language-recognizer/parser"
 )
 
 func TestParseGraphStringsVerbose(t *testing.T) {
@@ -47,7 +48,7 @@ func TestParseGraphStringsVerbose(t *testing.T) {
 
 	for i, tc := range tests {
 		t.Run(fmt.Sprintf("Test%d", i+1), func(t *testing.T) {
-			node, err := ParseGraph(tc.input)
+			node, err := parser.ParseGraph(tc.input)
 			passed := (err == nil)
 
 			if passed != tc.shouldPass {
@@ -59,11 +60,11 @@ func TestParseGraphStringsVerbose(t *testing.T) {
 			if err == nil {
 				// Print the parse tree
 				t.Logf("Parse tree for input %q:", tc.input)
-				PrintParseTree(node, "  ")
-				PrintTreeTerminal(node)
+				parser.PrintParseTree(node, "  ")
+				parser.PrintTreeTerminal(node)
 
 				// Print leftmost derivation
-				steps := LeftmostDerivation(node)
+				steps := parser.LeftmostDerivation(node)
 				t.Logf("Leftmost derivation for input %q:", tc.input)
 				for _, step := range steps {
 					t.Logf("  %s", step)
