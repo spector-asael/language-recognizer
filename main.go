@@ -32,5 +32,7 @@ func main() {
 		fmt.Scanln() 
 		fmt.Println("\nParse tree (terminal view):")
 		parser.PrintTreeTerminal(node) // Generate and show the parse tree
+		fmt.Println("Press Enter to continue...")
+		fmt.Scanln() 
 	}
 }
