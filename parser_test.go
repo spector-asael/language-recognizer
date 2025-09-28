@@ -48,7 +48,7 @@ func TestParseGraphStringsVerbose(t *testing.T) {
 
 	for i, tc := range tests {
 		t.Run(fmt.Sprintf("Test%d", i+1), func(t *testing.T) {
-			node, err := parser.ParseProgram(tc.input)
+			node, err := parser.LeftmostDerivation(tc.input)
 			passed := (err == nil)
 
 			if passed != tc.shouldPass {
@@ -63,7 +63,7 @@ func TestParseGraphStringsVerbose(t *testing.T) {
 				parser.PrintTreeTerminal(node)
 
 				// Print leftmost derivation
-				steps := parser.LeftmostDerivation(node)
+				steps := parser.PrintLeftmostDerivation(node)
 				t.Logf("Leftmost derivation for input %q:", tc.input)
 				for _, step := range steps {
 					t.Logf("  %s", step)
