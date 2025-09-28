@@ -14,7 +14,7 @@ func main() {
 			return
 		}
 
-		node, err := parser.ParseProgram(input) // Tokenize the input string 
+		node, err := parser.LeftmostDerivation(input) // Tokenize the input string 
 		if err != nil { // If there are unrecognizeable tokens
 			fmt.Printf("Error: %s\n", err.Error()) // It generates an appropriate error
 			fmt.Println("Press Enter to continue...") // prompts the user to press a key or click to continue
@@ -22,7 +22,7 @@ func main() {
 			continue // then resets the for loop
 		}
 
-		steps := parser.LeftmostDerivation(node) // Generate and show leftmost derivation
+		steps := parser.PrintLeftmostDerivation(node) // Generate and show leftmost derivation
 		fmt.Println("Leftmost derivation:")
 		for i, s := range steps {
 			fmt.Printf("%2d: %s\n", i+1, s)
