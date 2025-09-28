@@ -95,6 +95,10 @@ func parseGraphTokens(tokens []string) (*Node, error) {
 		return nil, errors.New(`input must start with "HI"`)
 	}
 
+	lastToken := tokens[len(tokens)-1]
+	 if lastToken != "BYE" {
+        return nil, errors.New(`missing "BYE" or extra tokens after drawing commands`)
+    }
 	// Parse drawing commands (<draw>)
 	drawNode, err := parseDrawTokens(ps)
 	if err != nil {
