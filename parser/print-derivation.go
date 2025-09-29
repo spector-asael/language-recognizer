@@ -8,9 +8,11 @@ import (
 type NodeType int 
 
 const (
-	NT_GRAPH NodeType = iota // The root graph node
-	NT_DRAW                  // A <draw> node
-	NT_ACTION                // An action node like "bar", "line", or "fill"
+    NT_GRAPH NodeType = iota
+    NT_DRAW
+    NT_ACTION
+    NT_X      // new
+    NT_Y      // new
 )
 
 // Node represents a node in the parse tree / AST
@@ -21,48 +23,32 @@ type Node struct {
 	children       []interface{}   // Children nodes or terminal strings
 }
 
-// PrintLeftmostDerivation performs a leftmost derivation on the AST
-// It expands nonterminal nodes step by step, recording each form
 func PrintLeftmostDerivation(rootNode *Node) []string {
-	// Start with the root node in the current form
-	currentFormSymbols := []interface{}{rootNode}
-	
-	// Steps will store the intermediate derivation strings
-	derivationSteps := []string{"<graph>"} // Initial form is the root graph
+    currentFormSymbols := []interface{}{rootNode}
+    derivationSteps := []string{"<graph>"} // Initial form
 
-	for {
-		// Find the first nonterminal in the current form
-		firstNonterminalPosition := findFirstNonterminalIndex(currentFormSymbols)
-		
-		// If no nonterminal remains, render the final form and break
-		if firstNonterminalPosition == -1 {
-			derivationSteps = append(derivationSteps, renderTerminals(currentFormSymbols))
-			break
-		}
+    for {
+        firstNonterminalPosition := findFirstNonterminalIndex(currentFormSymbols)
+        if firstNonterminalPosition == -1 {
+            // Only append final terminal form if it's not already in the steps
+            if len(derivationSteps) == 0 || derivationSteps[len(derivationSteps)-1] != renderTerminals(currentFormSymbols) {
+                derivationSteps = append(derivationSteps, renderTerminals(currentFormSymbols))
+            }
+            break
+        }
 
-		// Convert the nonterminal element to a Node
-		nonterminalNode := currentFormSymbols[firstNonterminalPosition].(*Node)
+        nonterminalNode := currentFormSymbols[firstNonterminalPosition].(*Node)
 
-		// Get the right-hand side (children) of this nonterminal
-		childrenNodes := []interface{}{}
-		for _, child := range nonterminalNode.children {
-			childrenNodes = append(childrenNodes, child)
-		}
+        // Replace nonterminal with its children
+        newCurrentForm := append([]interface{}{}, currentFormSymbols[:firstNonterminalPosition]...)
+        newCurrentForm = append(newCurrentForm, nonterminalNode.children...)
+        newCurrentForm = append(newCurrentForm, currentFormSymbols[firstNonterminalPosition+1:]...)
+        currentFormSymbols = newCurrentForm
 
-		// Replace the nonterminal in currentFormSymbols with its children
-		newCurrentForm := []interface{}{}
-		newCurrentForm = append(newCurrentForm, currentFormSymbols[:firstNonterminalPosition]...) // Elements before nonterminal
-		newCurrentForm = append(newCurrentForm, childrenNodes...)                                // Replace with children
-		newCurrentForm = append(newCurrentForm, currentFormSymbols[firstNonterminalPosition+1:]...) // Elements after nonterminal
+        derivationSteps = append(derivationSteps, renderWithNonterminals(currentFormSymbols))
+    }
 
-		// Update currentFormSymbols for the next iteration
-		currentFormSymbols = newCurrentForm
-
-		// Render the current form, keeping nonterminals visible
-		derivationSteps = append(derivationSteps, renderWithNonterminals(currentFormSymbols))
-	}
-
-	return derivationSteps
+    return derivationSteps
 }
 
 // findFirstNonterminalIndex returns the index of the first nonterminal node (*Node)
@@ -77,29 +63,35 @@ func findFirstNonterminalIndex(symbolList []interface{}) int {
 }
 
 // renderWithNonterminals renders a list of symbols as a string
-// Nonterminal nodes are shown as their symbolic representation like "<graph>", "<draw>", "<action>"
+// Nonterminal nodes are shown as their symbolic representation like "<graph>", "<draw>", "<action>", "<x>", "<y>"
 func renderWithNonterminals(symbolList []interface{}) string {
-	renderedParts := []string{}
-	for _, symbol := range symbolList {
-		switch typedSymbol := symbol.(type) {
-		case string:
-			// Terminal strings are appended directly
-			renderedParts = append(renderedParts, typedSymbol)
-		case *Node:
-			// Nonterminals are shown as symbolic tags
-			switch typedSymbol.nodeType {
-			case NT_GRAPH:
-				renderedParts = append(renderedParts, "<graph>")
-			case NT_DRAW:
-				renderedParts = append(renderedParts, "<draw>")
-			case NT_ACTION:
-				renderedParts = append(renderedParts, "<action>")
-			}
-		}
-	}
-	return strings.Join(renderedParts, " ")
+    renderedParts := []string{}
+    for _, symbol := range symbolList {
+        switch typedSymbol := symbol.(type) {
+        case string:
+            // Terminal strings are appended directly
+            renderedParts = append(renderedParts, typedSymbol)
+        case *Node:
+            // Nonterminals are shown as symbolic tags
+            switch typedSymbol.nodeType {
+            case NT_GRAPH:
+                renderedParts = append(renderedParts, "<graph>")
+            case NT_DRAW:
+                renderedParts = append(renderedParts, "<draw>")
+            case NT_ACTION:
+                renderedParts = append(renderedParts, "<action>")
+            case NT_X:
+                renderedParts = append(renderedParts, "<x>")
+            case NT_Y:
+                renderedParts = append(renderedParts, "<y>")
+            default:
+                // Fallback for any unexpected node type
+                renderedParts = append(renderedParts, "<"+typedSymbol.productionRule+">")
+            }
+        }
+    }
+    return strings.Join(renderedParts, " ")
 }
-
 // renderTerminals renders a list of symbols as a string
 // Terminal nodes are displayed as their actual values, while nonterminals
 // without a terminal are shown as "<production_rule>"
@@ -121,4 +113,13 @@ func renderTerminals(symbolList []interface{}) string {
 		}
 	}
 	return strings.Join(renderedParts, " ")
+}
+
+func isFullyTerminal(symbols []interface{}) bool {
+    for _, s := range symbols {
+        if _, ok := s.(*Node); ok {
+            return false
+        }
+    }
+    return true
 }

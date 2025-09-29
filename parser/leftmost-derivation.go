@@ -9,22 +9,22 @@ import (
 // LeftmostDerivation is the entry point for parsing a program into an AST.
 // It trims the input, tokenizes it, and constructs the parse tree.
 func LeftmostDerivation(input string) (*Node, error) {
-	input = strings.TrimSpace(input)
+	input = strings.TrimSpace(input) // Trim empty space 
 	if input == "" {
-		return nil, errors.New("input is empty")
+		return nil, errors.New("input is empty") // Check if there is any actual input 
 	}
 
-	tokens, err := tokenize(input)
+	tokens, err := tokenize(input) // Tokenizes the input 
 	if err != nil {
 		return nil, err
 	}
 
-	drawNode, err := ParseGraphTokens(tokens)
+	drawNode, err := ParseGraphTokens(tokens) // Begins parsing, returns the final <draw> token node
 	if err != nil {
 		return nil, err
 	}
 
-	rootNode := &Node{
+	rootNode := &Node{ // Appends the <draw> node to a <graph> node. This contains the full derivation.
 		nodeType:      NT_GRAPH,
 		productionRule: "HI <draw> BYE",
 		children:      []interface{}{"HI", drawNode, "BYE"},
