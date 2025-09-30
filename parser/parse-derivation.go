@@ -1,199 +1,187 @@
 package parser
 
-import (
-	"errors"
-	"fmt"
-	"regexp"
-)
-// parserState keeps track of the current token position while parsing.
-type parserState struct {
-	tokens []string
-	pos    int
+import "fmt"
+
+// ParserError describes an error encountered during parsing
+type ParserError struct {
+	Msg   string
+	Token *Token
 }
 
-func (ps *parserState) peek() string {
-	if ps.pos >= len(ps.tokens) {
-		return ""
+// Error implements the error interface for ParserError.
+func (p *ParserError) Error() string {
+	return fmt.Sprintf("%s", p.Msg)
+}
+
+// parseGraph builds an AST for the <graph> non‑terminal given a slice of tokens
+func ParseGraph(tokens []Token) (*Node, error) {
+	pos := 0
+	root := NewNode("<graph>")
+
+	if pos >= len(tokens) || tokens[pos].Type != TokenKeyword || tokens[pos].Value != "HI" {
+		return nil, &ParserError{Msg: "Error: program must start with 'HI'"}
 	}
-	return ps.tokens[ps.pos]
-}
+	root.Append(tokens[pos].Value)
+	pos++
 
-func (ps *parserState) next() string {
-	tok := ps.peek()
-	if ps.pos < len(ps.tokens) {
-		ps.pos++
-	}
-	return tok
-}
-
-// LeftmostDerivation is the entry point for parsing a program into an AST.
-// It trims the input, tokenizes it, and constructs the parse tree.
-func LeftmostDerivation(input []string) (*Node, error) {
-
-	drawNode, err := ParseGraphTokens(input) // Begins parsing, returns the final <draw> token node
+	drawNode, err := parseDraw(tokens, &pos)
 	if err != nil {
 		return nil, err
 	}
+	root.AppendNode(drawNode)
 
-	rootNode := &Node{ // Appends the <draw> node to a <graph> node. This contains the full derivation.
-		nodeType:      NT_GRAPH,
-		productionRule: "HI <draw> BYE",
-		children:      []interface{}{"HI", drawNode, "BYE"},
+	if pos >= len(tokens) || tokens[pos].Type != TokenKeyword || tokens[pos].Value != "BYE" {
+		return nil, &ParserError{Msg: "Error: program must end with 'BYE'"}
+	}
+	root.Append(tokens[pos].Value)
+	pos++
+
+	if pos < len(tokens) {
+		return nil, &ParserError{Msg: fmt.Sprintf("Error: unexpected token '%s' after 'BYE'", tokens[pos].Value)}
 	}
 
-	return rootNode, nil
+	return root, nil
 }
-// parseGraphTokens parses a sequence of tokens as a <graph> node.
-func ParseGraphTokens(tokens []string) (*Node, error) {
-	ps := &parserState{tokens: tokens, pos: 0}
 
-	if ps.next() != "HI" {
-		return nil, errors.New(`program must start with "HI"`)
-	}
+// parseDraw recognises one or more actions separated by semicolons
+func parseDraw(tokens []Token, pos *int) (*Node, error) {
+	drawNode := NewNode("<draw>")
 
-	if tokens[len(tokens)-1] != "BYE" {
-		return nil, errors.New(`program must end with "BYE"`)
-	}
-
-	drawNode, err := parseDrawTokens(ps)
+	actionNode, err := parseAction(tokens, pos)
 	if err != nil {
 		return nil, err
 	}
+	drawNode.AppendNode(actionNode)
 
-	if ps.next() != "BYE" {
-		return nil, errors.New(`missing "BYE" or extra tokens after drawing commands`)
-	}
-
-	if ps.pos != len(ps.tokens) {
-		return nil, errors.New("unexpected extra tokens after BYE")
+	for *pos < len(tokens) && tokens[*pos].Type == TokenSemicolon {
+		drawNode.Append(tokens[*pos].Value)
+		*pos++
+		nextDraw, err := parseDraw(tokens, pos)
+		if err != nil {
+			return nil, err
+		}
+		drawNode.AppendNode(nextDraw)
+		return drawNode, nil
 	}
 
 	return drawNode, nil
 }
 
-// parseDrawTokens parses a <draw> node (may be recursive for multiple actions).
-func parseDrawTokens(ps *parserState) (*Node, error) {
-	actionNode, err := parseActionTokens(ps)
-	if err != nil {
-		return nil, err
+// parseAction parses one of the built‑in actions and its required coordinates
+func parseAction(tokens []Token, pos *int) (*Node, error) {
+	if *pos >= len(tokens) {
+		return nil, &ParserError{Msg: "Error: expected an action after 'HI' or ';'"}
+	}
+	tok := tokens[*pos]
+	if tok.Type != TokenKeyword {
+		return nil, &ParserError{Msg: fmt.Sprintf("Error: action '%s' not valid", tok.Value), Token: &tok}
 	}
 
-	if ps.peek() == ";" {
-		ps.next() // consume semicolon
-		nextDrawNode, err := parseDrawTokens(ps)
+	actionNode := NewNode("<action>")
+	actionName := tok.Value
+
+	if actionName != "BAR" && actionName != "LINE" && actionName != "FILL" {
+		return nil, &ParserError{Msg: fmt.Sprintf("Error: action '%s' not valid", tok.Value), Token: &tok}
+	}
+	actionNode.Append(actionName)
+	*pos++
+
+	switch actionName {
+	case "BAR":
+		xyNode, err := parseXY(tokens, pos)
 		if err != nil {
 			return nil, err
 		}
-		return &Node{
-			nodeType:      NT_DRAW,
-			productionRule: "<action> ; <draw>",
-			children:      []interface{}{actionNode, ";", nextDrawNode},
-		}, nil
+		actionNode.AppendNode(xyNode)
+		if *pos >= len(tokens) || tokens[*pos].Type != TokenComma {
+			return nil, &ParserError{Msg: "Error: expected ',' after first coordinate in 'bar'"}
+		}
+		actionNode.Append(tokens[*pos].Value)
+		*pos++
+		yNode, err := parseY(tokens, pos)
+		if err != nil {
+			return nil, err
+		}
+		actionNode.AppendNode(yNode)
+
+	case "LINE":
+		xyNode1, err := parseXY(tokens, pos)
+		if err != nil {
+			return nil, err
+		}
+		actionNode.AppendNode(xyNode1)
+		if *pos >= len(tokens) || tokens[*pos].Type != TokenComma {
+			return nil, &ParserError{Msg: "Error: expected ',' after first coordinate in 'line'"}
+		}
+		actionNode.Append(tokens[*pos].Value)
+		*pos++
+		xyNode2, err := parseXY(tokens, pos)
+		if err != nil {
+			return nil, err
+		}
+		actionNode.AppendNode(xyNode2)
+
+	case "FILL":
+		xyNode, err := parseXY(tokens, pos)
+		if err != nil {
+			return nil, err
+		}
+		actionNode.AppendNode(xyNode)
 	}
 
-	return &Node{
-		nodeType:      NT_DRAW,
-		productionRule: "<action>",
-		children:      []interface{}{actionNode},
-	}, nil
+	return actionNode, nil
 }
 
-// parseActionTokens parses a single <action> node.
-func parseActionTokens(ps *parserState) (*Node, error) {
-    token := ps.peek()
+// parseXY parses a coordinate of the form <x><y>
+func parseXY(tokens []Token, pos *int) (*Node, error) {
+	if *pos >= len(tokens) {
+		return nil, &ParserError{Msg: "Error: expected coordinate but reached end of input"}
+	}
+	tok := tokens[*pos]
+	if tok.Type != TokenXY {
+		return nil, &ParserError{Msg: fmt.Sprintf("Error: expected coordinate but found '%s'", tok.Value), Token: &tok}
+	}
+	if len(tok.Value) != 2 {
+		return nil, &ParserError{Msg: fmt.Sprintf("Error: invalid coordinate '%s'", tok.Value), Token: &tok}
+	}
 
-    switch token {
-    case "BYE":
-        // If the next token is BYE, the program does not contain any actions
-        return nil, fmt.Errorf("Your program does not contain any actions.")
+	letter := tok.Value[0]
+	digit := tok.Value[1]
+	if letter < 'A' || letter > 'E' {
+		return nil, &ParserError{Msg: fmt.Sprintf("Error: %s contains an error – variable '%c' is not valid", tok.Value, letter), Token: &tok}
+	}
+	if digit < '1' || digit > '5' {
+		return nil, &ParserError{Msg: fmt.Sprintf("Error: %s contains the unrecognized value %c", tok.Value, digit), Token: &tok}
+	}
 
-    case "bar":
-        ps.next() // consume "bar"
-        start := ps.next()
-        if start == "" {
-            return nil, errors.New("expected coordinate after 'bar'")
-        }
-        if ps.next() != "," {
-            return nil, errors.New("expected ',' in 'bar' action")
-        }
-        end := ps.next()
-        if !IsXY(start) || !IsY(end) {
-            return nil, fmt.Errorf("invalid coordinates: %s, %s", start, end)
-        }
-
-        // Split start coordinate into X and Y
-        xPart := string(start[0])
-        yPart := string(start[1])
-
-        // Create placeholder nodes for <x> and <y>
-        xNode := &Node{nodeType: NT_X, terminalValue: xPart, children: []interface{}{xPart}}
-        yNode := &Node{nodeType: NT_Y, terminalValue: yPart, children: []interface{}{yPart}}
-        y2Node := &Node{nodeType: NT_Y, terminalValue: end, children: []interface{}{end}}
-
-        // Create the action node with placeholders
-        return &Node{
-            nodeType:      NT_ACTION,
-            productionRule: "bar <x><y> , <y>",
-            children:      []interface{}{"bar ", xNode, yNode, ",", y2Node},
-            terminalValue: fmt.Sprintf("bar %s , %s", start, end),
-        }, nil
-
-    case "line":
-        ps.next() // consume "line"
-        start := ps.next()
-        if start == "" {
-            return nil, errors.New("expected coordinate after 'line'")
-        }
-        if ps.next() != "," {
-            return nil, errors.New("expected ',' in 'line' action")
-        }
-        end := ps.next()
-        if !IsXY(start) || !IsXY(end) {
-            return nil, fmt.Errorf("invalid coordinates: %s, %s", start, end)
-        }
-
-        // Split start and end coordinates into X and Y
-        x1Node := &Node{nodeType: NT_X, terminalValue: string(start[0]), children: []interface{}{string(start[0])}}
-        y1Node := &Node{nodeType: NT_Y, terminalValue: string(start[1]), children: []interface{}{string(start[1])}}
-        x2Node := &Node{nodeType: NT_X, terminalValue: string(end[0]), children: []interface{}{string(end[0])}}
-        y2Node := &Node{nodeType: NT_Y, terminalValue: string(end[1]), children: []interface{}{string(end[1])}}
-
-        // Create the action node with placeholders
-        return &Node{
-            nodeType:      NT_ACTION,
-            productionRule: "line <x><y> , <x><y>",
-            children:      []interface{}{"line ", x1Node, y1Node, ",", x2Node, y2Node},
-            terminalValue: fmt.Sprintf("line %s , %s", start, end),
-        }, nil
-
-    case "fill":
-        ps.next() // consume "fill"
-        coord := ps.next()
-        if !IsXY(coord) {
-            return nil, fmt.Errorf("invalid coordinate: %s", coord)
-        }
-
-        xNode := &Node{nodeType: NT_X, terminalValue: string(coord[0]), children: []interface{}{string(coord[0])}}
-        yNode := &Node{nodeType: NT_Y, terminalValue: string(coord[1]), children: []interface{}{string(coord[1])}}
-
-        // Create the action node with placeholders
-        return &Node{
-            nodeType:      NT_ACTION,
-            productionRule: "fill <x><y>",
-            children:      []interface{}{"fill ", xNode, yNode},
-            terminalValue: fmt.Sprintf("fill %s", coord),
-        }, nil
-    }
-
-    return nil, fmt.Errorf("invalid action: '%s'", token)
+	xyNode := NewNode("<xy>")
+	xNode := xyNode.Append("<x>")
+	xNode.Append(string(letter))
+	yNode := xyNode.Append("<y>")
+	yNode.Append(string(digit))
+	*pos++
+	return xyNode, nil
 }
 
-// isXY validates coordinates like "A1" to "E5".
-func IsXY(token string) bool {
-	return regexp.MustCompile(`^[A-E][1-5]$`).MatchString(token)
-}
+// parseY parses a standalone <y> non‑terminal which matches a single digit
+func parseY(tokens []Token, pos *int) (*Node, error) {
+	if *pos >= len(tokens) {
+		return nil, &ParserError{Msg: "Error: expected y‑coordinate but reached end of input"}
+	}
+	tok := tokens[*pos]
+	if tok.Type != TokenY {
+		return nil, &ParserError{Msg: fmt.Sprintf("Error: expected y‑coordinate but found '%s'", tok.Value), Token: &tok}
+	}
+	if len(tok.Value) != 1 {
+		return nil, &ParserError{Msg: fmt.Sprintf("Error: invalid y‑coordinate '%s'", tok.Value), Token: &tok}
+	}
+	digit := tok.Value[0]
+	if digit < '1' || digit > '5' {
+		return nil, &ParserError{Msg: fmt.Sprintf("Error: %s contains the unrecognized value %c", tok.Value, digit), Token: &tok}
+	}
 
-// isY validates a single Y-coordinate (1-5).
-func IsY(token string) bool {
-	return regexp.MustCompile(`^[1-5]$`).MatchString(token)
+	yNode := NewNode("<y>")
+	yNode.Append(string(digit))
+	*pos++
+	return yNode, nil
 }

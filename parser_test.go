@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 	"github.com/spector-asael/language-recognizer/parser"
+	"github.com/spector-asael/language-recognizer/tree"
 )
 
 func TestParseGraphStringsVerbose(t *testing.T) {

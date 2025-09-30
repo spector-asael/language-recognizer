@@ -7,53 +7,21 @@ import (
 
 // NodePosition stores the calculated position for a node in the tree
 type NodePosition struct {
-	node   interface{} // can be string or *Node
-	x      int
-	y      int
-	width  int
-	center int
+	node   *Node
+	x      int // horizontal position (column)
+	y      int // vertical position (row/level)
+	width  int // width of the node's subtree
+	center int // center position of this node relative to its subtree start
 }
 
-// getTreeLabel returns symbolic label for tree display
-func getTreeLabel(n interface{}) string {
-	switch v := n.(type) {
-	case string:
-		return v
-	case *Node:
-		switch v.nodeType {
-		case NT_GRAPH:
-			return "<graph>"
-		case NT_DRAW:
-			return "<draw>"
-		case NT_ACTION:
-			return "<action>"
-		case NT_X:
-			return "<x>"
-		case NT_Y:
-			return "<y>"
-		default:
-			return "<unknown>"
-		}
-	}
-	return "<unknown>"
-}
-
-// getChildren returns children of a node
-func getChildren(n interface{}) []interface{} {
-	switch v := n.(type) {
-	case *Node:
-		return v.children
-	}
-	return nil
-}
-
-// calculateArrayPositions performs post-order traversal to assign positions
-func calculateArrayPositions(root interface{}) ([]NodePosition, int, int) {
-	var positions []NodePosition
+// CalculatePositions performs a post-order traversal to calculate
+// exact positions for all nodes in the tree. Returns positions slice, total width, and max depth
+func CalculatePositions(root *Node) ([]NodePosition, int, int) {
+	positions := []NodePosition{}
 	maxDepth := 0
 
-	var traverse func(n interface{}, depth int) (int, int)
-	traverse = func(n interface{}, depth int) (int, int) {
+	var traverse func(n *Node, depth int) (int, int)
+	traverse = func(n *Node, depth int) (int, int) {
 		if n == nil {
 			return 0, 0
 		}
@@ -62,22 +30,27 @@ func calculateArrayPositions(root interface{}) ([]NodePosition, int, int) {
 			maxDepth = depth
 		}
 
-		label := getTreeLabel(n)
-		children := getChildren(n)
-
-		if len(children) == 0 {
-			nodeWidth := len(label)
+		// Base case: leaf node
+		if len(n.Children) == 0 {
+			nodeWidth := len(n.Value)
 			center := nodeWidth / 2
-			positions = append(positions, NodePosition{node: n, y: depth, width: nodeWidth, center: center})
+			positions = append(positions, NodePosition{
+				node:   n,
+				x:      0, // Will be adjusted later
+				y:      depth,
+				width:  nodeWidth,
+				center: center,
+			})
 			return nodeWidth, center
 		}
 
-		childWidths := make([]int, len(children))
-		childCenters := make([]int, len(children))
+		// Recursive case: process all children first
+		childWidths := make([]int, len(n.Children))
+		childCenters := make([]int, len(n.Children))
 		totalWidth := 0
 		gap := 4
 
-		for i, child := range children {
+		for i, child := range n.Children {
 			w, c := traverse(child, depth+1)
 			childWidths[i] = w
 			childCenters[i] = c
@@ -87,42 +60,56 @@ func calculateArrayPositions(root interface{}) ([]NodePosition, int, int) {
 			totalWidth += w
 		}
 
-		// Center node over children
-		left := childCenters[0]
-		right := 0
-		for i := range childWidths {
+		// Calculate the center of this node based on children
+		leftmostChildCenter := childCenters[0]
+		rightmostChildCenter := 0
+		for i := 0; i < len(childWidths); i++ {
 			if i > 0 {
-				right += gap
+				rightmostChildCenter += gap
 			}
 			if i == len(childWidths)-1 {
-				right += childCenters[i]
+				rightmostChildCenter += childCenters[i]
 			} else {
-				right += childWidths[i]
+				rightmostChildCenter += childWidths[i]
 			}
 		}
-		nodeCenter := (left + right) / 2
-		nodeWidth := len(label)
+
+		nodeCenter := (leftmostChildCenter + rightmostChildCenter) / 2
+		nodeWidth := len(n.Value)
+
 		minWidth := nodeCenter + (nodeWidth+1)/2
 		if totalWidth < minWidth {
 			totalWidth = minWidth
 		}
-		if nodeCenter-nodeWidth/2 < 0 {
-			shift := nodeWidth/2 - nodeCenter
+
+		leftNeed := nodeCenter - nodeWidth/2
+		if leftNeed < 0 {
+			shift := -leftNeed
 			nodeCenter += shift
 			totalWidth += shift
 		}
 
-		positions = append(positions, NodePosition{node: n, y: depth, width: totalWidth, center: nodeCenter})
+		positions = append(positions, NodePosition{
+			node:   n,
+			x:      0,
+			y:      depth,
+			width:  totalWidth,
+			center: nodeCenter,
+		})
+
 		return totalWidth, nodeCenter
 	}
 
 	totalWidth, _ := traverse(root, 0)
+
+	// Second pass: assign absolute x positions
 	assignAbsolutePositions(root, 0, positions)
+
 	return positions, totalWidth, maxDepth
 }
 
-// assignAbsolutePositions sets absolute x positions
-func assignAbsolutePositions(n interface{}, xOffset int, positions []NodePosition) {
+// assignAbsolutePositions performs a second traversal to set absolute x coordinates
+func assignAbsolutePositions(n *Node, xOffset int, positions []NodePosition) {
 	var nodePos *NodePosition
 	for i := range positions {
 		if positions[i].node == n {
@@ -133,32 +120,34 @@ func assignAbsolutePositions(n interface{}, xOffset int, positions []NodePositio
 	if nodePos == nil {
 		return
 	}
+
 	nodePos.x = xOffset + nodePos.center
 
-	children := getChildren(n)
-	if len(children) == 0 {
-		return
-	}
-	childX := xOffset
-	gap := 4
-	for _, child := range children {
-		var cp *NodePosition
-		for i := range positions {
-			if positions[i].node == child {
-				cp = &positions[i]
-				break
+	if len(n.Children) > 0 {
+		gap := 4
+		childX := xOffset
+		for i, child := range n.Children {
+			var childPos *NodePosition
+			for j := range positions {
+				if positions[j].node == child {
+					childPos = &positions[j]
+					break
+				}
 			}
-		}
-		if cp != nil {
-			assignAbsolutePositions(child, childX, positions)
-			childX += cp.width + gap
+			if childPos != nil {
+				assignAbsolutePositions(child, childX, positions)
+				childX += childPos.width
+				if i < len(n.Children)-1 {
+					childX += gap
+				}
+			}
 		}
 	}
 }
 
-// PrintParseTree renders the tree in terminal
+// PrintParseTree renders the tree using a 2D character array
 func PrintParseTree(root *Node) {
-	positions, totalWidth, maxDepth := calculateArrayPositions(root)
+	positions, totalWidth, maxDepth := CalculatePositions(root)
 
 	height := maxDepth*2 + 1
 	grid := make([][]rune, height)
@@ -171,19 +160,18 @@ func PrintParseTree(root *Node) {
 
 	for _, pos := range positions {
 		row := pos.y * 2
-		label := getTreeLabel(pos.node)
-		startX := pos.x - len(label)/2
-		for i, ch := range label {
+		nodeValue := pos.node.Value
+		startX := pos.x - len(nodeValue)/2
+		for i, ch := range nodeValue {
 			if startX+i >= 0 && startX+i < len(grid[row]) {
 				grid[row][startX+i] = ch
 			}
 		}
 
-		children := getChildren(pos.node)
-		if len(children) > 0 {
+		if len(pos.node.Children) > 0 {
 			connectorRow := row + 1
 			childPositions := []NodePosition{}
-			for _, child := range children {
+			for _, child := range pos.node.Children {
 				for _, cp := range positions {
 					if cp.node == child {
 						childPositions = append(childPositions, cp)
@@ -191,25 +179,37 @@ func PrintParseTree(root *Node) {
 					}
 				}
 			}
-			if len(childPositions) == 1 {
-				grid[connectorRow][childPositions[0].x] = '│'
-			} else {
-				leftmost := childPositions[0].x
-				rightmost := childPositions[len(childPositions)-1].x
-				nodeStart := pos.x - len(label)/2
-				nodeEnd := nodeStart + len(label) - 1
-				for x := leftmost; x <= rightmost; x++ {
-					if x < nodeStart || x > nodeEnd {
-						grid[row][x] = '_'
+
+			if len(childPositions) > 0 {
+				if len(childPositions) == 1 {
+					childX := childPositions[0].x
+					if childX >= 0 && childX < len(grid[connectorRow]) {
+						grid[connectorRow][childX] = '│'
 					}
-				}
-				for _, cp := range childPositions {
-					if cp.x < pos.x {
-						grid[connectorRow][cp.x] = '/'
-					} else if cp.x > pos.x {
-						grid[connectorRow][cp.x] = '\\'
-					} else {
-						grid[connectorRow][cp.x] = '│'
+				} else {
+					leftmost := childPositions[0].x
+					rightmost := childPositions[len(childPositions)-1].x
+					nodeStart := pos.x - len(nodeValue)/2
+					nodeEnd := nodeStart + len(nodeValue) - 1
+
+					for x := leftmost; x <= rightmost; x++ {
+						if x >= 0 && x < len(grid[row]) {
+							if x < nodeStart || x > nodeEnd {
+								grid[row][x] = '_'
+							}
+						}
+					}
+
+					for _, cp := range childPositions {
+						if cp.x >= 0 && cp.x < len(grid[connectorRow]) {
+							if cp.x == pos.x {
+								grid[connectorRow][cp.x] = '│'
+							} else if cp.x < pos.x {
+								grid[connectorRow][cp.x] = '/'
+							} else {
+								grid[connectorRow][cp.x] = '\\'
+							}
+						}
 					}
 				}
 			}
@@ -217,6 +217,8 @@ func PrintParseTree(root *Node) {
 	}
 
 	for _, row := range grid {
-		fmt.Println(strings.TrimRight(string(row), " "))
+		line := string(row)
+		line = strings.TrimRight(line, " ")
+		fmt.Println(line)
 	}
 }
