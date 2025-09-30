@@ -1,0 +1,11 @@
+# Examples for graph_program.go
+# Valid inputs
+HI bar D2,5; fill A2; line B4,D2 BYE
+HI fill A1 BYE
+HI line C3,E1 BYE
+
+# Invalid inputs
+HI bar H5,3 BYE        # invalid variable letter H
+HI bar B9,3 BYE        # invalid digit 9 in coordinate
+HI cir A1 BYE          # unknown action 'cir'
+HI bar D2 5 BYE        # missing comma between coordinates

@@ -1,38 +1,83 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
-	"github.com/spector-asael/language-recognizer/parser"
+	"os"
+	"strings"
 )
 
+// displayGrammar prints the BNF rules for the drawing language recogniser.
+// These lines are shown each time the program prompts for a new input.  The
+// grammar defines the syntax accepted by the recogniser.
+func displayGrammar() {
+	fmt.Println("Grammar for drawing program:")
+	fmt.Println("<graph>    → HI <draw> BYE")
+	fmt.Println("<draw>     → <action> | <action> ; <draw>")
+	fmt.Println("<action>   → bar <x><y>,<y> | line <x><y>,<x><y> | fill <x><y>")
+	fmt.Println("<x>        → A | B | C | D | E")
+	fmt.Println("<y>        → 1 | 2 | 3 | 4 | 5")
+	fmt.Println()
+}
+
+// main orchestrates the program: it repeatedly displays the grammar,
+// accepts an input string, scans and parses it, performs the leftmost
+// derivation and draws the parse tree.  On encountering an error it
+// reports the problem and prompts the user again.  When the user types
+// "END" (case insensitive) the program terminates.
 func main() {
-	for { // Loop back whenever the user has inputted a string
-		DisplayBNF() // Displays BNF upon starting
-		input := ReadInputString() // Accepts an input string
-		if input == "END" { // Ends program if prompted to
-			fmt.Println("Exiting.")
-			return
+	scanner := bufio.NewScanner(os.Stdin)
+	for {
+		displayGrammar()
+		fmt.Print("Enter drawing string (or END to quit): ")
+		if !scanner.Scan() {
+			break
 		}
-
-		node, err := parser.LeftmostDerivation(input) // Tokenize the input string 
-		if err != nil { // If there are unrecognizeable tokens
-			fmt.Printf("Error: %s\n", err.Error()) // It generates an appropriate error
-			fmt.Println("Press Enter to continue...") // prompts the user to press a key or click to continue
-			fmt.Scanln()
-			continue // then resets the for loop
+		line := strings.TrimSpace(scanner.Text())
+		if strings.EqualFold(line, "END") {
+			break
 		}
-
-		steps := parser.PrintLeftmostDerivation(node) // Generate and show leftmost derivation
+		tokens, err := scanTokens(line)
+		if err != nil {
+			// On scanning error, report the problem and wait for the user
+			// to press Enter before returning to the top of the loop.  This
+			// behaviour follows the assignment guideline to prompt the user
+			// to continue after an unsuccessful derivation attempt.
+			fmt.Println(err)
+			fmt.Print("Press Enter to continue...")
+			bufio.NewReader(os.Stdin).ReadString('\n')
+			continue
+		}
+		ast, perr := parseGraph(tokens)
+		if perr != nil {
+			// On parsing error, report the problem and wait for user
+			fmt.Println(perr.Error())
+			fmt.Print("Press Enter to continue...")
+			bufio.NewReader(os.Stdin).ReadString('\n')
+			continue
+		}
+		// Successful derivation: print each sentential form and prompt
+		// the user before drawing the parse tree, as required by the
+		// assignment.  After displaying the tree, prompt again before
+		// looping back for another input.
 		fmt.Println("Leftmost derivation:")
+		steps := leftmostDerivation(ast)
 		for i, s := range steps {
-			fmt.Printf("%2d: %s\n", i+1, s)
+			fmt.Printf("%02d → %s\n", i+1, s)
 		}
+		fmt.Println()
+		// Indicate success and wait for the user before drawing the tree.
+		fmt.Print("SUCCESS. \n")
+		fmt.Print("Press Enter to continue...")
+		bufio.NewReader(os.Stdin).ReadString('\n')
+		fmt.Println()
+		fmt.Println("Parse tree:")
 
-		fmt.Println("Derivation successful. Press Enter to display parse tree...")
-		fmt.Scanln() 
-		fmt.Println("\nParse tree (terminal view):")
-		parser.PrintTreeTerminal(node) // Generate and show the parse tree
-		fmt.Println("Press Enter to continue...")
-		fmt.Scanln() 
+		printArrayTree(ast)
+
+		fmt.Println()
+		// After displaying the tree, wait again before prompting for a new string.
+		fmt.Print("Press Enter to continue...")
+		bufio.NewReader(os.Stdin).ReadString('\n')
 	}
 }

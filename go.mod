@@ -1,3 +1,3 @@
-module github.com/spector-asael/language-recognizer
+module code
 
-go 1.22.2
+go 1.23.5
