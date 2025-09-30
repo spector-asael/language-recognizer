@@ -203,7 +203,7 @@ func assignAbsolutePositions(n interface{}, xOffset int, positions []NodePositio
 }
 
 // PrintTreeTerminal renders the tree using a 2D character array for perfect alignment
-func PrintTreeTerminal(root *Node) {
+func PrintParseTree(root *Node) {
 	positions, totalWidth, maxDepth := calculateArrayPositions(root)
 
 	// Create 2D grid: each level needs 2 rows (node + connector)

@@ -44,7 +44,7 @@ func main() {
 		fmt.Println("Derivation successful. Press Enter to display parse tree...")
 		fmt.Scanln() 
 		fmt.Println("\nParse tree (terminal view):")
-		parser.PrintTreeVertical(node) // Generate and show the parse tree
+		parser.PrintParseTree(node) // Generate and show the parse tree
 		fmt.Println("Press Enter to continue...")
 		fmt.Scanln() 
 	}
