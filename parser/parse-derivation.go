@@ -26,6 +26,23 @@ func (ps *parserState) next() string {
 	return tok
 }
 
+// LeftmostDerivation is the entry point for parsing a program into an AST.
+// It trims the input, tokenizes it, and constructs the parse tree.
+func LeftmostDerivation(input []string) (*Node, error) {
+
+	drawNode, err := ParseGraphTokens(input) // Begins parsing, returns the final <draw> token node
+	if err != nil {
+		return nil, err
+	}
+
+	rootNode := &Node{ // Appends the <draw> node to a <graph> node. This contains the full derivation.
+		nodeType:      NT_GRAPH,
+		productionRule: "HI <draw> BYE",
+		children:      []interface{}{"HI", drawNode, "BYE"},
+	}
+
+	return rootNode, nil
+}
 // parseGraphTokens parses a sequence of tokens as a <graph> node.
 func ParseGraphTokens(tokens []string) (*Node, error) {
 	ps := &parserState{tokens: tokens, pos: 0}
@@ -100,7 +117,7 @@ func parseActionTokens(ps *parserState) (*Node, error) {
             return nil, errors.New("expected ',' in 'bar' action")
         }
         end := ps.next()
-        if !isXY(start) || !isY(end) {
+        if !IsXY(start) || !IsY(end) {
             return nil, fmt.Errorf("invalid coordinates: %s, %s", start, end)
         }
 
@@ -131,7 +148,7 @@ func parseActionTokens(ps *parserState) (*Node, error) {
             return nil, errors.New("expected ',' in 'line' action")
         }
         end := ps.next()
-        if !isXY(start) || !isXY(end) {
+        if !IsXY(start) || !IsXY(end) {
             return nil, fmt.Errorf("invalid coordinates: %s, %s", start, end)
         }
 
@@ -152,7 +169,7 @@ func parseActionTokens(ps *parserState) (*Node, error) {
     case "fill":
         ps.next() // consume "fill"
         coord := ps.next()
-        if !isXY(coord) {
+        if !IsXY(coord) {
             return nil, fmt.Errorf("invalid coordinate: %s", coord)
         }
 
@@ -172,11 +189,11 @@ func parseActionTokens(ps *parserState) (*Node, error) {
 }
 
 // isXY validates coordinates like "A1" to "E5".
-func isXY(token string) bool {
+func IsXY(token string) bool {
 	return regexp.MustCompile(`^[A-E][1-5]$`).MatchString(token)
 }
 
 // isY validates a single Y-coordinate (1-5).
-func isY(token string) bool {
+func IsY(token string) bool {
 	return regexp.MustCompile(`^[1-5]$`).MatchString(token)
 }

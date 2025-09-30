@@ -8,12 +8,12 @@ import (
 type NodeType int 
 
 const (
-    NT_GRAPH NodeType = iota
-    NT_DRAW
-    NT_ACTION
-    NT_X      // new
-    NT_Y      // new
-)
+    NT_GRAPH NodeType = iota // Represents the root <graph> node
+    NT_DRAW // Represents a <draw> nonterminal node
+    NT_ACTION // Represents an <action> nonterminal node (bar, line, fill, etc.)
+    NT_X      // Represents coordinate <x>
+    NT_Y      // Represents coordinate <y>
+) // NT = Nonterminal constants 
 
 // Node represents a node in the parse tree / AST
 type Node struct {
@@ -23,6 +23,14 @@ type Node struct {
 	children       []interface{}   // Children nodes or terminal strings
 }
 
+// leftmostDerivation walks the AST in a preorder, left‑to‑right manner to
+// produce the sequence of sentential forms corresponding to a leftmost
+// derivation.  At each non‑terminal node, it substitutes the leftmost
+// non‑terminal in the current string with the concatenation of the node's
+// children.  Punctuation is preserved in the output string without
+// additional spaces and adjacent <x>/<y> pairs are collapsed into a single
+// token (e.g. <x><y> → <xy>).  The resulting slice contains each step
+// including the final sentence.
 func PrintLeftmostDerivation(rootNode *Node) []string {
     currentFormSymbols := []interface{}{rootNode}
     derivationSteps := []string{"<graph>"} // Initial form

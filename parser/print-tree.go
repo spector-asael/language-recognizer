@@ -1,13 +1,33 @@
+// new-parse-tree.go
 package parser
 
 import (
 	"fmt"
+	"strings"
 )
 
-const (
-	siblingSpacing = 2
-	levelRowHeight = 3
-)
+// NodePosition stores the calculated position for a node in the tree
+type NodePosition struct {
+	node   interface{} // can be string or *Node
+	x      int         // horizontal position (column)
+	y      int         // vertical position (row/level)
+	width  int         // width of the node's subtree
+	center int         // center position of this node relative to its subtree start
+}
+
+// getLabel extracts the display label for a node or terminal string
+func getLabel(x interface{}) string {
+	switch v := x.(type) {
+	case string:
+		return v
+	case *Node:
+		if v.terminalValue != "" {
+			return v.terminalValue
+		}
+		return getNodeLabel(v) // use your existing function
+	}
+	return "<unknown>"
+}
 
 func getNodeLabel(n *Node) string {
 	switch n.nodeType {
@@ -25,140 +45,253 @@ func getNodeLabel(n *Node) string {
 	return "<unknown-node>"
 }
 
-func PrintTreeTerminal(root *Node) {
-	if root == nil {
-		fmt.Println("<empty tree>")
-		return
+
+// getChildren returns all children in normalized []*Node form
+func getChildren(x interface{}) []interface{} {
+	switch v := x.(type) {
+	case string:
+		return nil
+	case *Node:
+		return v.children
 	}
-	w, h := measureWidth(root), measureDepth(root)*levelRowHeight+1
-	if w < 1 {
-		w = 1
-	}
-	if h < 1 {
-		h = 1
+	return nil
+}
+
+// calculateArrayPositions performs a post-order traversal to calculate
+// exact positions for all nodes in the tree. Returns a slice of positions
+// and the total width needed.
+func calculateArrayPositions(root interface{}) ([]NodePosition, int, int) {
+	positions := []NodePosition{}
+	maxDepth := 0
+
+	var traverse func(n interface{}, depth int) (int, int)
+	traverse = func(n interface{}, depth int) (int, int) {
+		if n == nil {
+			return 0, 0
+		}
+
+		if depth > maxDepth {
+			maxDepth = depth
+		}
+
+		label := getLabel(n)
+
+		children := getChildren(n)
+		// Base case: leaf node
+		if len(children) == 0 {
+			nodeWidth := len(label)
+			center := nodeWidth / 2
+			positions = append(positions, NodePosition{
+				node:   n,
+				x:      0, // Will be adjusted later
+				y:      depth,
+				width:  nodeWidth,
+				center: center,
+			})
+			return nodeWidth, center
+		}
+
+		// Recursive case: process all children first
+		childWidths := make([]int, len(children))
+		childCenters := make([]int, len(children))
+		totalWidth := 0
+		gap := 4 // spacing between children
+
+		for i, child := range children {
+			w, c := traverse(child, depth+1)
+			childWidths[i] = w
+			childCenters[i] = c
+			if i > 0 {
+				totalWidth += gap
+			}
+			totalWidth += w
+		}
+
+		// Calculate the center of this node based on children
+		leftmostChildCenter := childCenters[0]
+		rightmostChildCenter := 0
+		for i := 0; i < len(childWidths); i++ {
+			if i > 0 {
+				rightmostChildCenter += gap
+			}
+			if i == len(childWidths)-1 {
+				rightmostChildCenter += childCenters[i]
+			} else {
+				rightmostChildCenter += childWidths[i]
+			}
+		}
+
+		nodeCenter := (leftmostChildCenter + rightmostChildCenter) / 2
+		nodeWidth := len(label)
+
+		// Ensure the node label fits
+		minWidth := nodeCenter + (nodeWidth+1)/2
+		if totalWidth < minWidth {
+			totalWidth = minWidth
+		}
+
+		// Also ensure left side fits
+		leftNeed := nodeCenter - nodeWidth/2
+		if leftNeed < 0 {
+			// Shift everything right
+			shift := -leftNeed
+			nodeCenter += shift
+			totalWidth += shift
+		}
+
+		positions = append(positions, NodePosition{
+			node:   n,
+			x:      0, // Will be adjusted later
+			y:      depth,
+			width:  totalWidth,
+			center: nodeCenter,
+		})
+
+		return totalWidth, nodeCenter
 	}
 
-	grid := make([][]rune, h)
+	totalWidth, _ := traverse(root, 0)
+
+	// Second pass: assign absolute x positions
+	assignAbsolutePositions(root, 0, positions)
+
+	return positions, totalWidth, maxDepth
+}
+
+// assignAbsolutePositions performs a second traversal to set absolute x coordinates
+func assignAbsolutePositions(n interface{}, xOffset int, positions []NodePosition) {
+	// Find this node's position entry
+	var nodePos *NodePosition
+	for i := range positions {
+		if positions[i].node == n {
+			nodePos = &positions[i]
+			break
+		}
+	}
+
+	if nodePos == nil {
+		return
+	}
+
+	nodePos.x = xOffset + nodePos.center
+
+	// Position children
+	children := getChildren(n)
+	if len(children) > 0 {
+		gap := 4
+		childX := xOffset
+
+		for i, child := range children {
+			// Find child's position
+			var childPos *NodePosition
+			for j := range positions {
+				if positions[j].node == child {
+					childPos = &positions[j]
+					break
+				}
+			}
+
+			if childPos != nil {
+				assignAbsolutePositions(child, childX, positions)
+				childX += childPos.width
+				if i < len(children)-1 {
+					childX += gap
+				}
+			}
+		}
+	}
+}
+
+// PrintTreeTerminal renders the tree using a 2D character array for perfect alignment
+func PrintTreeTerminal(root *Node) {
+	positions, totalWidth, maxDepth := calculateArrayPositions(root)
+
+	// Create 2D grid: each level needs 2 rows (node + connector)
+	height := maxDepth*2 + 1
+	grid := make([][]rune, height)
 	for i := range grid {
-		grid[i] = make([]rune, w)
+		grid[i] = make([]rune, totalWidth+10) // Extra padding
 		for j := range grid[i] {
 			grid[i][j] = ' '
 		}
 	}
 
-	render(grid, root, 0, 0)
+	// Place all nodes in the grid
+	for _, pos := range positions {
+		row := pos.y * 2
+		nodeValue := getLabel(pos.node)
+		startX := pos.x - len(nodeValue)/2
 
+		// Place node value
+		for i, ch := range nodeValue {
+			if startX+i >= 0 && startX+i < len(grid[row]) {
+				grid[row][startX+i] = ch
+			}
+		}
+
+		// Draw connectors to children
+		children := getChildren(pos.node)
+		if len(children) > 0 {
+			connectorRow := row + 1
+
+			// Find children positions
+			childPositions := []NodePosition{}
+			for _, child := range children {
+				for _, cp := range positions {
+					if cp.node == child {
+						childPositions = append(childPositions, cp)
+						break
+					}
+				}
+			}
+
+			if len(childPositions) > 0 {
+				// Special case: single child - just draw vertical line
+				if len(childPositions) == 1 {
+					childX := childPositions[0].x
+					if childX >= 0 && childX < len(grid[connectorRow]) {
+						grid[connectorRow][childX] = '│'
+					}
+				} else {
+					// Multiple children: draw underscores and connectors
+					leftmost := childPositions[0].x
+					rightmost := childPositions[len(childPositions)-1].x
+
+					// Draw underscores between leftmost and rightmost children
+					nodeStart := pos.x - len(nodeValue)/2
+					nodeEnd := nodeStart + len(nodeValue) - 1
+
+					for x := leftmost; x <= rightmost; x++ {
+						if x >= 0 && x < len(grid[row]) {
+							// Don't overwrite the node label
+							if x < nodeStart || x > nodeEnd {
+								grid[row][x] = '_'
+							}
+						}
+					}
+
+					// Draw connectors to each child
+					for _, cp := range childPositions {
+						if cp.x >= 0 && cp.x < len(grid[connectorRow]) {
+							if cp.x == pos.x {
+								grid[connectorRow][cp.x] = '│'
+							} else if cp.x < pos.x {
+								grid[connectorRow][cp.x] = '/'
+							} else {
+								grid[connectorRow][cp.x] = '\\'
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Print the grid
 	for _, row := range grid {
-		if s := string(row); len(s) > 0 && s != string(make([]rune, len(row))) {
-			fmt.Println(s)
-		}
+		line := string(row)
+		// Trim trailing spaces
+		line = strings.TrimRight(line, " ")
+		fmt.Println(line)
 	}
-}
-
-func measureWidth(x interface{}) int {
-	switch v := x.(type) {
-	case string:
-		if v == "" {
-			return 1
-		}
-		return len(v)
-	case *Node:
-		lbl := len(getNodeLabel(v))
-		if len(v.children) == 0 {
-			if lbl == 0 {
-				return 1
-			}
-			return lbl
-		}
-		sum := (len(v.children) - 1) * siblingSpacing
-		for _, c := range v.children {
-			sum += measureWidth(c)
-		}
-		if sum < lbl {
-			return lbl
-		}
-		return sum
-	}
-	return 0
-}
-
-func measureDepth(x interface{}) int {
-	switch v := x.(type) {
-	case string:
-		return 1
-	case *Node:
-		max := 0
-		for _, c := range v.children {
-			if d := measureDepth(c); d > max {
-				max = d
-			}
-		}
-		return 1 + max
-	}
-	return 0
-}
-
-func render(grid [][]rune, x interface{}, startX, y int) int {
-	w := measureWidth(x)
-	if w <= 0 {
-		return 0
-	}
-
-	lbl := ""
-	switch v := x.(type) {
-	case string:
-		lbl = v
-	case *Node:
-		lbl = getNodeLabel(v)
-	}
-
-	labelX := startX + (w-len(lbl))/2
-	for i, r := range lbl {
-		if y >= 0 && y < len(grid) && labelX+i < len(grid[0]) {
-			grid[y][labelX+i] = r
-		}
-	}
-
-	node, ok := x.(*Node)
-	if !ok || len(node.children) == 0 {
-		return w
-	}
-
-	parentCenter := labelX + (len(lbl)-1)/2
-	childStart := startX
-
-	for _, c := range node.children {
-		cw := measureWidth(c)
-		if cw < 1 {
-			cw = 1
-		}
-		childCenter := childStart + (cw-1)/2
-
-		if y+1 < len(grid) {
-			grid[y+1][parentCenter] = '|'
-		}
-		if y+2 < len(grid) {
-			for pos := min(parentCenter, childCenter); pos <= max(parentCenter, childCenter); pos++ {
-				grid[y+2][pos] = '-'
-			}
-			grid[y+2][parentCenter], grid[y+2][childCenter] = '+', '+'
-		}
-
-		render(grid, c, childStart, y+3)
-		childStart += cw + siblingSpacing
-	}
-	return w
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
